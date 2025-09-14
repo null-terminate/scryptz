@@ -11,14 +11,10 @@ from cachetools import LRUCache
 
 # Configuration - hardcoded values as requested
 # AWS_ACCOUNT_ID = "123456"  # Replace with your AWS account ID
-AWS_REGION = "eu-west-1"  # Replace with your preferred region
-LOG_GROUPS = [
-    # "/aws/apigateway/my-api",  # Add more log groups as needed
-]
 
 # Query configuration
 MAX_LINES_PER_FILE = 5000
-OUTPUT_DIR = "output"
+OUTPUT_DIR = ".output"
 MAX_HASH_CACHE_SIZE = 30000  # Maximum number of row hashes to keep in LRU cache
 
 class HashDeduplicator:
@@ -105,7 +101,7 @@ class StreamingFileWriter:
         return self.files_created
 
 class CloudWatchLogsQuerier:
-    def __init__(self, region: str = AWS_REGION, enable_deduplication: bool = False):
+    def __init__(self, region: str = 'eu-west-1', enable_deduplication: bool = False):
         """Initialize the CloudWatch Logs client."""
         self.client = boto3.client('logs', region_name=region)
         self.region = region
@@ -257,6 +253,10 @@ def main():
                        help='End time (format: YYYY-MM-DD HH:MM:SS or YYYY-MM-DD)')
     parser.add_argument('--query', required=True,
                        help='CloudWatch Logs Insights query string')
+    parser.add_argument('--log-groups', nargs='+', required=True,
+                       help='One or more CloudWatch log group names to query')
+    parser.add_argument('--region', default='eu-west-1',
+                       help='AWS region (default: eu-west-1)')
     parser.add_argument('--output-prefix', default='cloudwatch_logs',
                        help='Prefix for output files (default: cloudwatch_logs)')
     parser.add_argument('--chunk-minutes', type=int, default=60,
@@ -265,7 +265,7 @@ def main():
                        help='Enable row deduplication using LRU cache (default: disabled)')
     
     args = parser.parse_args()
-    
+
     try:
         # Parse start and end times
         start_dt = parse_datetime(args.start_time)
@@ -276,8 +276,8 @@ def main():
         end_timestamp = int(end_dt.timestamp())
         
         print(f"Querying logs from {start_dt} to {end_dt}")
-        print(f"Using log groups: {LOG_GROUPS}")
-        print(f"AWS Region: {AWS_REGION}")
+        print(f"Using log groups: {args.log_groups}")
+        print(f"AWS Region: {args.region}")
         
         # Generate time chunks
         time_chunks = generate_time_chunks(start_timestamp, end_timestamp, args.chunk_minutes)
@@ -287,7 +287,7 @@ def main():
         print(f"Deduplication: {'enabled' if args.enable_deduplication else 'disabled'}")
         
         # Initialize the querier and file writer
-        querier = CloudWatchLogsQuerier(AWS_REGION, enable_deduplication=args.enable_deduplication)
+        querier = CloudWatchLogsQuerier(args.region, enable_deduplication=args.enable_deduplication)
         file_writer = StreamingFileWriter(args.output_prefix)
         
         try:
@@ -304,7 +304,7 @@ def main():
                 try:
                     # Execute the query for this chunk
                     chunk_entries = querier.stream_query_results(
-                        LOG_GROUPS, args.query, chunk_start, chunk_end, file_writer
+                        args.log_groups, args.query, chunk_start, chunk_end, file_writer
                     )
                     
                     total_entries_all_chunks += chunk_entries
