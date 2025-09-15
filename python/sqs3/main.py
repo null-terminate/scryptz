@@ -6,16 +6,6 @@ import datetime
 import uuid
 import time
 
-class RpcRequest:
-    def __init__(self, path, body, headers={}):
-        self.path = path
-        self.method = 'POST'
-        self.body = body
-        self.headers = headers
-
-    def toJson(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
-
 client = boto3.client('lambda')
 
 def invoke_lambda(fn, r):
