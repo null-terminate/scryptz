@@ -250,6 +250,11 @@ def parse_datetime(date_string: str) -> datetime:
 
 def generate_time_chunks(start_time: int, end_time: int, chunk_minutes: int) -> List[tuple]:
     """Generate time chunks for processing."""
+    # Handle case when start_time > end_time by flipping them
+    if start_time > end_time:
+        print(f"Warning: start_time ({start_time}) > end_time ({end_time}), flipping them")
+        start_time, end_time = end_time, start_time
+    
     chunks = []
     current_start = start_time
     chunk_seconds = chunk_minutes * 60
@@ -279,6 +284,7 @@ class ProducerPayload:
     chunk_minutes: int
     querier: CloudWatchLogsQuerier
     file_writer: StreamingFileWriter
+    reverse_order: bool = False
 
 def process_payload(payload: ConsumerPayload) -> int:
     """Process a payload by executing the query and streaming results to file."""
@@ -306,6 +312,11 @@ async def producer(q: asyncio.Queue, producer_payload: ProducerPayload):
         producer_payload.end_timestamp, 
         producer_payload.chunk_minutes
     )
+    
+    # Reverse the chunks if reverse order is requested
+    if producer_payload.reverse_order:
+        time_chunks.reverse()
+    
     total_chunks = len(time_chunks)
     
     print(f"[Producer] Generated {total_chunks} time chunks of {producer_payload.chunk_minutes} minutes each")
@@ -385,7 +396,9 @@ async def main():
                        help='Maximum queue size for backpressure (default: 100)')
     parser.add_argument('--max-workers', type=int, default=8,
                        help='Maximum number of threads in ThreadPoolExecutor (default: 8)')
-    
+    parser.add_argument('--reverse-order', action='store_true',
+                       help='Process time chunks in reverse chronological order (default: false)')
+
     args = parser.parse_args()
 
     # Parse start and end times
@@ -405,6 +418,7 @@ async def main():
     print(f"Queue size: {args.queue_size}")
     print(f"Max worker threads: {args.max_workers}")
     print(f"Deduplication: {'enabled' if args.enable_deduplication else 'disabled'}")
+    print(f"Reverse order: {'enabled' if args.reverse_order else 'disabled'}")
     
     # Initialize the querier and file writer
     querier = CloudWatchLogsQuerier(args.region, enable_deduplication=args.enable_deduplication)
@@ -418,7 +432,8 @@ async def main():
         end_timestamp=end_timestamp,
         chunk_minutes=args.chunk_minutes,
         querier=querier,
-        file_writer=file_writer
+        file_writer=file_writer,
+        reverse_order=args.reverse_order
     )
     
     # Create asyncio queue with specified size for backpressure
